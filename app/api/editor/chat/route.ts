@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic } from '@/lib/api/claude'
+import { geminiGenerate } from '@/lib/api/gemini'
 import { EDITOR_AGENT_PROMPT } from '@/lib/prompts/editor-agent'
 
 export async function POST(request: NextRequest) {
@@ -45,27 +46,29 @@ export async function POST(request: NextRequest) {
     { role: 'user', content: message },
   ]
 
-  // Call Claude with streaming
   let fullText = ''
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const claudeStream = await anthropic.messages.stream({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1024,
-          system: systemWithContext,
-          messages: claudeMessages,
-        })
-
-        for await (const chunk of claudeStream) {
-          if (
-            chunk.type === 'content_block_delta' &&
-            chunk.delta.type === 'text_delta'
-          ) {
-            fullText += chunk.delta.text
+        if (process.env.ANTHROPIC_API_KEY) {
+          // Use Claude with streaming
+          const claudeStream = await anthropic.messages.stream({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 1024,
+            system: systemWithContext,
+            messages: claudeMessages,
+          })
+          for await (const chunk of claudeStream) {
+            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+              fullText += chunk.delta.text
+            }
           }
+        } else {
+          // Fallback to Gemini 2.0 Flash
+          const conversationText = claudeMessages.map(m => `${m.role}: ${m.content}`).join('\n')
+          fullText = await geminiGenerate(conversationText, systemWithContext)
         }
 
         // Parse JSON response
