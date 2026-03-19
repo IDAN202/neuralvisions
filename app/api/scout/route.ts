@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { braveSearch } from '@/lib/api/brave'
 import { youtubeTrending } from '@/lib/api/youtube'
 import { newsTopHeadlines } from '@/lib/api/newsapi'
+import { fetchGdeltTrends } from '@/lib/api/gdelt'
 
 export async function GET(request: NextRequest) {
   const category = request.nextUrl.searchParams.get('category') ?? 'ai'
@@ -14,16 +15,29 @@ export async function GET(request: NextRequest) {
   }
   const query = queries[category] ?? queries['ai']
 
-  const [brave, youtube, news] = await Promise.allSettled([
+  const [brave, youtube, news, gdelt] = await Promise.allSettled([
     braveSearch(query),
     youtubeTrending(category),
     newsTopHeadlines(category),
+    fetchGdeltTrends(query, 10),
   ])
+
+  const gdeltResults = gdelt.status === 'fulfilled'
+    ? gdelt.value.map(a => ({
+        title: a.title,
+        summary: '',
+        source_url: a.url,
+        source: 'gdelt',
+        thumbnail: a.socialimage,
+        score: Math.round(Math.abs(a.tone) * 10),
+      }))
+    : []
 
   const results = [
     ...(brave.status === 'fulfilled' ? brave.value : []),
     ...(youtube.status === 'fulfilled' ? youtube.value : []),
     ...(news.status === 'fulfilled' ? news.value : []),
+    ...gdeltResults,
   ]
 
   // Deduplicate by URL

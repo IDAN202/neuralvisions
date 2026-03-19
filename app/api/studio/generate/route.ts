@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic } from '@/lib/api/claude'
+import { geminiGenerate } from '@/lib/api/gemini'
 import { SCRIPT_GENERATOR_PROMPT } from '@/lib/prompts/script-generator'
 
 export async function POST(request: NextRequest) {
@@ -37,14 +38,20 @@ export async function POST(request: NextRequest) {
   const userContent = `Topic: ${report.title}\n\nResearch Summary:\n${report.summary}\n\nDetailed Content:\n${report.full_content?.slice(0, 4000) ?? ''}`
 
   try {
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      system: SCRIPT_GENERATOR_PROMPT,
-      messages: [{ role: 'user', content: userContent }],
-    })
+    let raw: string
 
-    const raw = (message.content[0] as any).text
+    if (process.env.ANTHROPIC_API_KEY) {
+      const message = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8000,
+        system: SCRIPT_GENERATOR_PROMPT,
+        messages: [{ role: 'user', content: userContent }],
+      })
+      raw = (message.content[0] as any).text
+    } else {
+      // Fallback to Gemini 2.0 Flash when Claude key is not set
+      raw = await geminiGenerate(userContent, SCRIPT_GENERATOR_PROMPT)
+    }
     const scenes: any[] = JSON.parse(raw)
 
     const sceneRows = scenes.map((s: any) => ({
