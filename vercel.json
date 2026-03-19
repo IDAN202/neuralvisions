@@ -1,0 +1,9 @@
+{
+  "functions": {
+    "app/api/studio/generate/route.ts": { "maxDuration": 60 },
+    "app/api/clips/extract/route.ts": { "maxDuration": 60 },
+    "app/api/editor/chat/route.ts": { "maxDuration": 60 },
+    "app/api/research/route.ts": { "maxDuration": 30 },
+    "app/api/video/assemble/route.ts": { "maxDuration": 30 }
+  }
+}
