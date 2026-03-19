@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { publishViaPostiz } from '@/lib/api/postiz'
-import { postInstagramReel, postFacebookVideo } from '@/lib/api/meta'
+import { ayrsharePost, AyrsharePlatform } from '@/lib/api/ayrshare'
+import { bufferSchedulePost, bufferGetProfiles } from '@/lib/api/buffer'
+import { triggerMakeScenario } from '@/lib/api/make'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -23,38 +24,54 @@ export async function POST(req: NextRequest) {
   const platforms: string[] = item.platforms ?? []
   const videoUrl: string = item.video_url ?? ''
   const caption: string = item.caption ?? ''
+  const scheduledAt: string | undefined = item.scheduled_at ?? undefined
   const results: Record<string, any> = {}
 
-  // Post via Postiz (handles Twitter, TikTok, LinkedIn, etc.)
-  const postizPlatforms = platforms.filter(p => !['instagram', 'facebook'].includes(p))
-  if (postizPlatforms.length > 0 && process.env.POSTIZ_API_KEY) {
+  // 1. Ayrshare — posts to Instagram, Facebook, TikTok, Twitter, YouTube in one call
+  if (process.env.AYRSHARE_API_KEY && platforms.length > 0) {
     try {
-      results.postiz = await publishViaPostiz({
-        content: caption,
-        platforms: postizPlatforms,
+      results.ayrshare = await ayrsharePost({
+        post: caption,
+        platforms: platforms as AyrsharePlatform[],
         mediaUrls: videoUrl ? [videoUrl] : [],
-        scheduledAt: item.scheduled_at,
+        scheduleDate: scheduledAt,
       })
     } catch (e: any) {
-      results.postiz_error = e.message
+      results.ayrshare_error = e.message
     }
   }
 
-  // Post to Instagram via Meta Graph API
-  if (platforms.includes('instagram') && process.env.META_ACCESS_TOKEN && videoUrl) {
+  // 2. Buffer — fallback scheduler for Instagram/Facebook/Twitter
+  if (process.env.BUFFER_ACCESS_TOKEN && !process.env.AYRSHARE_API_KEY) {
     try {
-      results.instagram = await postInstagramReel(videoUrl, caption)
+      const profiles = await bufferGetProfiles()
+      const profileIds = profiles.map((p: any) => p.id)
+      if (profileIds.length > 0) {
+        results.buffer = await bufferSchedulePost({
+          profileIds,
+          text: caption,
+          mediaLink: videoUrl || undefined,
+          scheduledAt: scheduledAt ? String(new Date(scheduledAt).getTime() / 1000) : undefined,
+        })
+      }
     } catch (e: any) {
-      results.instagram_error = e.message
+      results.buffer_error = e.message
     }
   }
 
-  // Post to Facebook via Meta Graph API
-  if (platforms.includes('facebook') && process.env.META_ACCESS_TOKEN && videoUrl) {
+  // 3. Make.com — trigger automation scenario (runs in parallel with above)
+  if (process.env.MAKE_WEBHOOK_URL) {
     try {
-      results.facebook = await postFacebookVideo(videoUrl, caption)
+      results.make = await triggerMakeScenario({
+        action: 'publish',
+        videoUrl,
+        caption,
+        platforms,
+        scheduledAt,
+        metadata: { publishQueueId, userId: user.id },
+      })
     } catch (e: any) {
-      results.facebook_error = e.message
+      results.make_error = e.message
     }
   }
 
