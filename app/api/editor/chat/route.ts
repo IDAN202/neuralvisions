@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        if (process.env.ANTHROPIC_API_KEY) {
+        if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.trim() !== '') {
           // Use Claude with streaming
           const claudeStream = await anthropic.messages.stream({
             model: 'claude-sonnet-4-6',
